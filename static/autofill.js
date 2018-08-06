@@ -58,6 +58,11 @@ $(document).ready(function() {
 						}
 					});
 
+					// TODO: if user.app.isAdmin check need to apply
+					if(app.user.isAdmin && (term.startsWith("a") || term.startsWith("A"))){
+						usernames.push("all");
+					}
+
 					// Remove current user from suggestions
 					if (app.user.username && usernames.indexOf(app.user.username) !== -1) {
 						usernames.splice(usernames.indexOf(app.user.username), 1);

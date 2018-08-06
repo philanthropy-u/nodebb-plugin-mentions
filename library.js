@@ -6,14 +6,16 @@ var XRegExp = require('xregexp');
 var validator = require('validator');
 var nconf = module.parent.require('nconf');
 
-var Topics = module.parent.require('./topics');
 var User = module.parent.require('./user');
+var Topics = module.parent.require('./topics');
+var User = require.main.require('./src/user');
 var Groups = module.parent.require('./groups');
 var Notifications = module.parent.require('./notifications');
 var Privileges = module.parent.require('./privileges');
 var Meta = module.parent.require('./meta');
 var Utils = module.parent.require('../public/src/utils');
 var batch = module.parent.require('./batch');
+var themeUtils = require('../nodebb-theme-philu-community/src/utils/');
 
 var SocketPlugins = module.parent.require('./socket.io/plugins');
 
@@ -75,6 +77,19 @@ Mentions.notify = function(data) {
 
 	if (!matches) {
 		return;
+	}
+
+	var allExists = matches.filter(match => match.indexOf("@all") !== -1);
+	if(allExists.length){
+		themeUtils.getSubscribers(data.post.cid.toString(), function(err, uids){
+			User.getUsersFields(uids, ['username'], function(err, users){
+				var userNamesArray = [];
+				users.forEach(function(user){
+						userNamesArray.push("@" + user.username);
+				});
+				matches = userNamesArray;
+			});
+		});
 	}
 
 	var noMentionGroups = getNoMentionGroups();
