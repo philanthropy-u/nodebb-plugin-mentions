@@ -93,6 +93,8 @@ Mentions.notify = function(data) {
 							next(null, usernames);
 						});
 					});
+				} else {
+					next(null, matches);
 				}
 			},
 			function(usernames, next) {
