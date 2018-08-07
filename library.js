@@ -86,11 +86,11 @@ Mentions.notify = function(data) {
 				if(allExists.length) {
 					getSubscribers(data.post.cid.toString(), function(err, uids) {
 						User.getUsersFields(uids, ['username'], function(err, users) {
-							var userNamesArray = [];
+							var usernames = [];
 							users.forEach(function(user) {
-								userNamesArray.push("@" + user.username);
+								usernames.push("@" + user.username);
 							});
-							next(null, userNamesArray);
+							next(null, usernames);
 						});
 					});
 				}
