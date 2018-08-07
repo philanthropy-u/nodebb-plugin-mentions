@@ -6,6 +6,7 @@ var XRegExp = require('xregexp');
 var validator = require('validator');
 var nconf = module.parent.require('nconf');
 
+var Database = require.main.require("./src/database");
 var User = module.parent.require('./user');
 var Topics = module.parent.require('./topics');
 var User = require.main.require('./src/user');
@@ -79,98 +80,104 @@ Mentions.notify = function(data) {
 		return;
 	}
 
-	var allExists = matches.filter(match => match.indexOf("@all") !== -1);
-	if(allExists.length){
-		themeUtils.getSubscribers(data.post.cid.toString(), function(err, uids){
-			User.getUsersFields(uids, ['username'], function(err, users){
-				var userNamesArray = [];
-				users.forEach(function(user){
-						userNamesArray.push("@" + user.username);
+	async.waterfall([
+			function(next) {
+				var allExists = matches.filter(match => match.indexOf("@all") !== -1);
+				if(allExists.length) {
+					getSubscribers(data.post.cid.toString(), function(err, uids) {
+						User.getUsersFields(uids, ['username'], function(err, users) {
+							var userNamesArray = [];
+							users.forEach(function(user) {
+								userNamesArray.push("@" + user.username);
+							});
+							next(null, userNamesArray);
+						});
+					});
+				}
+			},
+			function(usernames, next) {
+				matches = usernames;
+				var noMentionGroups = getNoMentionGroups();
+
+				matches = matches.map(function(match) {
+					return Utils.slugify(match);
+				}).filter(function(match, index, array) {
+					return match && array.indexOf(match) === index && noMentionGroups.indexOf(match) === -1;
 				});
-				matches = userNamesArray;
-			});
-		});
-	}
 
-	var noMentionGroups = getNoMentionGroups();
+				if (!matches.length) {
+					return;
+				}
 
-	matches = matches.map(function(match) {
-		return Utils.slugify(match);
-	}).filter(function(match, index, array) {
-		return match && array.indexOf(match) === index && noMentionGroups.indexOf(match) === -1;
-	});
-
-	if (!matches.length) {
-		return;
-	}
-
-	async.parallel({
-		userRecipients: function(next) {
-			async.filter(matches, User.existsBySlug, next);
-		},
-		groupRecipients: function(next) {
-			async.filter(matches, Groups.existsBySlug, next);
-		}
-	}, function(err, results) {
-		if (err) {
-			return;
-		}
-
-		if (!results.userRecipients.length && !results.groupRecipients.length) {
-			return;
-		}
-
-		async.parallel({
-			topic: function(next) {
-				Topics.getTopicFields(postData.tid, ['title', 'cid'], next);
-			},
-			author: function(next) {
-				User.getUserField(postData.uid, 'username', next);
-			},
-			uids: function(next) {
-				async.map(results.userRecipients, function(slug, next) {
-					User.getUidByUserslug(slug, next);
-				}, next);
-			},
-			groupData: function(next) {
-				getGroupMemberUids(results.groupRecipients, next);
-			},
-			topicFollowers: function(next) {
-				Topics.getFollowers(postData.tid, next);
-			}
-		}, function(err, results) {
-			if (err) {
-				return;
-			}
-
-			var title = entities.decode(results.topic.title);
-			var titleEscaped = title.replace(/%/g, '&#37;').replace(/,/g, '&#44;');
-
-			var uids = results.uids.filter(function(uid, index, array) {
-				return array.indexOf(uid) === index && parseInt(uid, 10) !== parseInt(postData.uid, 10) && results.topicFollowers.indexOf(uid.toString()) === -1;
-			});
-
-			var groupMemberUids = {};
-			results.groupData.groupNames.forEach(function(groupName, index) {
-				results.groupData.groupMembers[index] = results.groupData.groupMembers[index].filter(function(uid) {
-					if (!uid || groupMemberUids[uid]) {
-						return false;
+				async.parallel({
+					userRecipients: function(next) {
+						async.filter(matches, User.existsBySlug, next);
+					},
+					groupRecipients: function(next) {
+						async.filter(matches, Groups.existsBySlug, next);
 					}
-					groupMemberUids[uid] = 1;
-					return uids.indexOf(uid) === -1 &&
-						parseInt(uid, 10) !== parseInt(postData.uid, 10) &&
-						results.topicFollowers.indexOf(uid.toString()) === -1;
+				}, function(err, results) {
+					if (err) {
+						return;
+					}
+
+					if (!results.userRecipients.length && !results.groupRecipients.length) {
+						return;
+					}
+
+					async.parallel({
+						topic: function(next) {
+							Topics.getTopicFields(postData.tid, ['title', 'cid'], next);
+						},
+						author: function(next) {
+							User.getUserField(postData.uid, 'username', next);
+						},
+						uids: function(next) {
+							async.map(results.userRecipients, function(slug, next) {
+								User.getUidByUserslug(slug, next);
+							}, next);
+						},
+						groupData: function(next) {
+							getGroupMemberUids(results.groupRecipients, next);
+						},
+						topicFollowers: function(next) {
+							Topics.getFollowers(postData.tid, next);
+						}
+					}, function(err, results) {
+						if (err) {
+							return;
+						}
+
+						var title = entities.decode(results.topic.title);
+						var titleEscaped = title.replace(/%/g, '&#37;').replace(/,/g, '&#44;');
+
+						var uids = results.uids.filter(function(uid, index, array) {
+							return array.indexOf(uid) === index && parseInt(uid, 10) !== parseInt(postData.uid, 10) && results.topicFollowers.indexOf(uid.toString()) === -1;
+						});
+
+						var groupMemberUids = {};
+						results.groupData.groupNames.forEach(function(groupName, index) {
+							results.groupData.groupMembers[index] = results.groupData.groupMembers[index].filter(function(uid) {
+								if (!uid || groupMemberUids[uid]) {
+									return false;
+								}
+								groupMemberUids[uid] = 1;
+								return uids.indexOf(uid) === -1 &&
+								parseInt(uid, 10) !== parseInt(postData.uid, 10) &&
+								results.topicFollowers.indexOf(uid.toString()) === -1;
+							});
+						});
+
+						sendNotificationToUids(postData, uids, 'user', '[[notifications:user_mentioned_you_in, ' + results.author + ', ' + titleEscaped + ']]');
+
+						results.groupData.groupNames.forEach(function(groupName, index) {
+							var memberUids = results.groupData.groupMembers[index];
+							sendNotificationToUids(postData, memberUids, groupName, '[[notifications:user_mentioned_group_in, ' + results.author + ', ' + groupName + ', ' + titleEscaped + ']]');
+						});
+					});
 				});
-			});
-
-			sendNotificationToUids(postData, uids, 'user', '[[notifications:user_mentioned_you_in, ' + results.author + ', ' + titleEscaped + ']]');
-
-			results.groupData.groupNames.forEach(function(groupName, index) {
-				var memberUids = results.groupData.groupMembers[index];
-				sendNotificationToUids(postData, memberUids, groupName, '[[notifications:user_mentioned_group_in, ' + results.author + ', ' + groupName + ', ' + titleEscaped + ']]');
-			});
-		});
-	});
+			}
+		]);
 };
 
 Mentions.addFilters = function (data, callback) {
@@ -397,3 +404,14 @@ SocketPlugins.mentions.listGroups = function(socket, data, callback) {
 };
 
 module.exports = Mentions;
+
+// HELPER FUNCTIONS
+
+var getSubscribers = function (cid, callback) {
+    Database.getSortedSetRange("cid:" + cid + ":subscribed:uids", 0, -1, function (err, uids) {
+        if (err) {
+            return callback(err);
+        }
+        callback(null, uids);
+    });
+};
