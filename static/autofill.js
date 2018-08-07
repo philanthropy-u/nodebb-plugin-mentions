@@ -58,7 +58,6 @@ $(document).ready(function() {
 						}
 					});
 
-					// TODO: if user.app.isAdmin check need to apply
 					if(app.user.isAdmin && (term.startsWith("a") || term.startsWith("A"))){
 						usernames.push("all");
 					}
