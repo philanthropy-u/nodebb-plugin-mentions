@@ -82,8 +82,11 @@ Mentions.notify = function(data) {
 
 	async.waterfall([
 			function(next) {
+				User.isAdministrator(data.post.uid, next);
+			},
+			function(isAdmin, next) {
 				var allExists = matches.filter(match => match.indexOf("@all") !== -1);
-				if(allExists.length) {
+				if(allExists.length && isAdmin) {
 					getSubscribers(data.post.cid.toString(), function(err, uids) {
 						User.getUsersFields(uids, ['username'], function(err, users) {
 							var usernames = [];
